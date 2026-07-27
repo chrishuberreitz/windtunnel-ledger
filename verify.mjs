@@ -32,8 +32,25 @@ function otsAvailable() {
   try { execFileSync("ots", ["--version"], { stdio: "ignore" }); return true; } catch { return false; }
 }
 
+/** Read the block heights the proof claims, without needing a Bitcoin node.
+ *  This proves the proof CONTAINS a Bitcoin attestation; it does not check that
+ *  attestation against the chain. Weaker than otsVerify — always labelled so. */
+function otsInfo(otsPath) {
+  try {
+    const out = execFileSync("ots", ["info", otsPath], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const blocks = [...out.matchAll(/BitcoinBlockHeaderAttestation\((\d+)\)/g)].map((m) => Number(m[1]));
+    if (blocks.length) return { attested: true, blocks: [...new Set(blocks)].sort((a, b) => a - b) };
+    return { attested: false, pending: /PendingAttestation/.test(out) };
+  } catch {
+    return { attested: false };
+  }
+}
+
 function otsVerify(otsPath) {
   // `ots verify` reads <file>.ots and re-hashes <file>; both must be present.
+  // Full verification needs a Bitcoin node — it checks the attested block's
+  // merkle root against the chain. Without one, fall back to reading the
+  // attestation out of the proof and say plainly that that is what happened.
   try {
     const out = execFileSync("ots", ["verify", otsPath], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     const m = out.match(/Bitcoin block (\d+) attests existence as of (.+)/);
@@ -41,6 +58,11 @@ function otsVerify(otsPath) {
     return { anchored: false, pending: /pending|incomplete/i.test(out) };
   } catch (e) {
     const txt = String(e.stdout || "") + String(e.stderr || "");
+    if (/Could not connect to Bitcoin node|rpcpassword/i.test(txt)) {
+      const info = otsInfo(otsPath);
+      if (info.attested) return { attestedOnly: true, blocks: info.blocks };
+      return { anchored: false, noNode: true };
+    }
     if (/pending|incomplete/i.test(txt)) return { anchored: false, pending: true };
     return { anchored: false, error: txt.split("\n")[0] || e.message };
   }
@@ -94,7 +116,12 @@ function main() {
           if (anchorDay <= cf.resolves_by) ok(`anchor precedes resolves_by (${anchorDay} ≤ ${cf.resolves_by})`);
           else { bad(`anchor is AFTER resolves_by — not a valid pre-registration`); failures++; }
         }
-      } else if (r.pending) note(`${YEL}⏳ pending${RST} — submitted to calendars, Bitcoin confirmation not yet upgraded (run \`ots upgrade\`)`);
+      } else if (r.attestedOnly) {
+        ok(`${GREEN}Bitcoin attestation present${RST} — block ${r.blocks.join(", ")}`);
+        note(`  no local Bitcoin node, so this read the attestation OUT of the proof rather than checking it AGAINST the chain.`);
+        note(`  for the full trustless check, run a Bitcoin node and re-run — or look up the block yourself.`);
+      } else if (r.noNode) note(`${YEL}no Bitcoin node and no attestation in the proof${RST}`);
+      else if (r.pending) note(`${YEL}⏳ pending${RST} — submitted to calendars, Bitcoin confirmation not yet upgraded (run \`ots upgrade\`)`);
       else note(`ots: ${r.error ?? "not anchored"}`);
     } else if (otsPath && !hasOts) {
       note("ots CLI not installed — skipping Bitcoin check (install: pip install opentimestamps-client)");

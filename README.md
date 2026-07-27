@@ -41,10 +41,18 @@ You'll see, for every call: the digest recomputing, the chain link intact, the s
 shasum -a 256 proofs/0002-led-live-001-resolve.jcs.json
 #    → must equal the entry's `digest` in calls.log.jsonl
 
-# 2. the clock, trustlessly (resolves against Bitcoin, needs no server of ours):
+# 2. the clock — read the Bitcoin block this call is stamped into:
+ots info proofs/0002-led-live-001-resolve.jcs.json.ots
+#    → look for BitcoinBlockHeaderAttestation(959722).
+#      Then look that block up in ANY block explorer, or on anyone's node,
+#      and read the minute it was mined. The time comes from a source
+#      that isn't us. That's the whole ballgame.
+
+# 2b. the fully trustless version — checks the attestation AGAINST the chain
+#     instead of reading it out of the proof. Needs a local Bitcoin node
+#     (it verifies the block's merkle root), which is why 2 is the one
+#     most people should start with:
 ots verify proofs/0002-led-live-001-resolve.jcs.json.ots
-#    → prints the Bitcoin block time the call was anchored at.
-#      That time precedes the claim's outcome. That's the whole ballgame.
 ```
 
 ## What this proves — and what it doesn't
