@@ -7,6 +7,7 @@
 //   2. walk the hash chain: seq is unbroken (+1), prev == previous line's digest
 //   3. confirm each OTS-stamped file's bytes are exactly the canonical blob we hashed
 //   4. (if `ots` is installed) verify each .ots against Bitcoin and print the block time
+//   5. print the sealed rationale — WHY the seal was made — for v3+ entries
 //
 // Then prints:  N committed · M resolved · K revealed  — the public arithmetic
 // that makes cherry-picking a legible tell.
@@ -126,6 +127,20 @@ function main() {
     } else if (otsPath && !hasOts) {
       note("ots CLI not installed — skipping Bitcoin check (install: pip install opentimestamps-client)");
     } else note("no .ots proof on this entry");
+
+    // 5 — the reasoning, as sealed (scheme v3+). Printed here rather than left
+    // to the website, because a reader who cloned this repo to avoid trusting
+    // us should not have to visit us to find out why a number moved.
+    if (typeof cf.rationale === "string" && cf.rationale) {
+      ok(`rationale sealed: ${DIM}${cf.rationale}${RST}`);
+      if (Array.isArray(cf.evidence) && cf.evidence.length) {
+        note(`  bound to ${cf.evidence.length} evidence source hash(es); the sources themselves are published on the verify page`);
+      }
+    } else if (cf.intent === "revise" || cf.outcome !== undefined) {
+      // A pre-v3 seal that moved a number. Say so plainly — the gap belongs in
+      // the record, not papered over by silence.
+      note(`${YEL}no sealed rationale${RST} — sealed under a scheme that predates v3; this proves the number moved, not why`);
+    }
 
     // accounting
     if (cf.intent === "resolve" && cf.outcome !== undefined) resolvedIds.add(cf.id);

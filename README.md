@@ -15,13 +15,43 @@ Every *live* Windtunnel call — its claim, its conviction, and the moment it wa
 - **`verify.mjs`** — the zero-trust verifier. Recomputes every digest, walks the whole hash chain, and checks every Bitcoin anchor. Trusts nothing you can't check.
 - **`lib/canonical.mjs`** — the frozen canonicalization + hashing recipe (RFC 8785 JCS → SHA-256), byte-identical to the writer's copy.
 
-## The frozen recipe (`scheme: gitchain-ots-v2`)
+## The frozen recipe (`scheme: gitchain-ots-v3`)
 
-1. Reduce a call to its irreducible tuple: `{ id, category, claim, certainty, resolves_by, provenance[], intent, committed_at, seq, prev, attribution }`.
+1. Reduce a call to its irreducible tuple: `{ id, category, claim, certainty, resolves_by, provenance[], intent, committed_at, seq, prev, attribution, rationale, evidence[] }`.
 2. Canonicalize with **RFC 8785 (JCS)** — sorted keys, no insignificant whitespace.
 3. `digest = SHA-256(JCS(tuple))`, lowercase hex.
 4. Append the line, chained by `prev` = the previous entry's digest, `seq` = its position.
 5. **OpenTimestamps** the canonical blob → Bitcoin anchor (upgrades within hours).
+
+### Why `rationale` and `evidence` are inside the hash
+
+`v2` could prove a conviction moved from 62 to 60, at a Bitcoin-fixed moment, by
+a named author, against an unchanged claim. It could not prove a single thing
+about **why** — and the sources that actually caused the move weren't bound to
+the seal at all, because the committed `provenance` is the entry's *original*
+sources, fixed when the call was created.
+
+So the reason lived in a git commit message or in prose on a website. Neither is
+memorialized: this repo's history can be rewritten and force-pushed, the OTS
+stamp is taken over the canonical blob *before* the commit exists, and prose is
+prose. A ledger of numbers moving for no recorded reason proves the clock wasn't
+cheated. It does not show that anyone was reasoning.
+
+Under `v3`:
+
+- **`rationale`** — plaintext, inside the hash, required on every seal. Plaintext
+  because `claim` is: hashing it would protect it from tampering while making it
+  useless to read.
+- **`evidence`** — `sha256("<source_url>|<date>")` for the sources behind *this*
+  seal, sorted (evidence is a set, not a sequence, so the same sources always
+  produce the same tuple). Required on any seal that moves a number — a revision
+  or a recorded outcome. The sources are published in the clear on the call's
+  verify page; recompute one and match it against the committed list.
+
+A note on what this does **not** do: it cannot make a rationale *true*. It makes
+it *fixed*. You can still read a sealed reason and conclude it was bad reasoning
+— which is the point, because now you're reading the reason that was actually
+given at the time, not one written afterwards with the outcome in hand.
 
 ### Why `attribution` is inside the hash
 
@@ -34,8 +64,8 @@ editable underneath a fixed timestamp. Under `v2` it is a committed field:
 change who claims the call and the digest changes, which means the anchor no
 longer matches.
 
-`v1` entries remain valid forever — verification hashes the tuple as stored, so
-both schemes share one code path. The version records which fields were
+`v1` and `v2` entries remain valid forever — verification hashes the tuple as
+stored, so every scheme shares one code path. The version records which fields were
 mandatory at commit time. A call can be sealed more than once (`resolve`, then
 `revise`, then `attribute`); each seal is **appended**, never substituted, so
 the earliest version of a claim stays exactly as public as the newest.
@@ -74,7 +104,7 @@ ots verify proofs/0002-led-live-001-resolve.jcs.json.ots
 
 ## What this proves — and what it doesn't
 
-It proves each call was **made when it says it was**, at the stated conviction, **by the author it names**, and that no call was silently deleted, reordered, or edited after the fact. It does **not** prove the calls are *good* — that's what the accruing live record measures over time. This layer earns the instrument the right to be scored; it doesn't do the scoring.
+It proves each call was **made when it says it was**, at the stated conviction, **by the author it names**, **for the reason it records**, and that no call was silently deleted, reordered, or edited after the fact. It does **not** prove the calls are *good* — that's what the accruing live record measures over time. This layer earns the instrument the right to be scored; it doesn't do the scoring.
 
 It also doesn't rest on GitHub. GitHub is where this repo is *published*, and a repo owner can rewrite git history and force-push — so hosting can never be the trust root. The anchor is in Bitcoin; the clone in your terminal is as authoritative as the one on github.com. If this repo vanished tomorrow, any copy of `proofs/` would still verify.
 
